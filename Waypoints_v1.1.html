@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Waypoint — Route Optimizer</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --ink:#121821;
+  --panel:#1a2029;
+  --panel-2:#212834;
+  --grid:#2b3441;
+  --route:#f2622e;
+  --route-dim:#8a3e21;
+  --waypoint:#3ec1b3;
+  --text:#e9edf1;
+  --text-dim:#8b97a6;
+  --danger:#e0563f;
+  --radius:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--text);font-family:'Inter',sans-serif;}
+body{padding-bottom:60px;}
+
+.wrap{max-width:640px;margin:0 auto;padding:0 16px;}
+
+header.hero{
+  padding:28px 16px 20px;
+  border-bottom:1px solid var(--grid);
+  background:
+    linear-gradient(180deg, rgba(242,98,46,0.08), transparent 70%);
+}
+.eyebrow{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  color:var(--route);
+  text-transform:uppercase;
+  margin:0 0 6px;
+}
+h1{
+  font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;
+  font-size:38px;
+  letter-spacing:.01em;
+  margin:0 0 6px;
+  line-height:1;
+}
+.sub{color:var(--text-dim);font-size:14px;margin:0;max-width:46ch;}
+
+section{padding:22px 16px;border-bottom:1px solid var(--grid);}
+.section-label{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--text-dim);margin:0 0 14px;display:flex;align-items:center;gap:8px;
+}
+.section-label::after{content:"";flex:1;height:1px;background:var(--grid);}
+
+/* Manifest / waypoint list */
+.stop-row{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;position:relative;
+  touch-action:pan-y;
+}
+.stop-row.dragging{
+  opacity:0.92;background:var(--panel-2);border-radius:8px;z-index:10;
+  box-shadow:0 8px 20px rgba(0,0,0,0.4);
+}
+.drag-handle{
+  flex-shrink:0;width:22px;height:28px;display:flex;align-items:center;justify-content:center;
+  color:var(--text-dim);cursor:grab;touch-action:none;user-select:none;font-size:15px;
+  letter-spacing:-2px;
+}
+.drag-handle:active{cursor:grabbing;color:var(--route);}
+.stop-badge{
+  width:28px;height:28px;border-radius:50%;
+  background:var(--panel-2);border:1px solid var(--grid);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-dim);
+  flex-shrink:0;
+}
+.stop-input{
+  flex:1;background:var(--panel);border:1px solid var(--grid);
+  border-radius:8px;padding:11px 12px;color:var(--text);font-size:15px;
+  font-family:'Inter',sans-serif;width:100%;
+}
+.stop-input:focus{outline:none;border-color:var(--route);}
+.stop-input-wrap{flex:1;position:relative;}
+.pin-toggle{
+  background:none;border:1px solid var(--grid);color:var(--text-dim);
+  width:28px;height:28px;flex-shrink:0;cursor:pointer;border-radius:6px;
+  font-size:13px;display:flex;align-items:center;justify-content:center;
+}
+.pin-toggle:hover{border-color:var(--waypoint);color:var(--text);}
+.pin-toggle.active{background:var(--waypoint);border-color:var(--waypoint);color:#0d1f1c;}
+.stop-row.pinned .stop-input{border-color:var(--waypoint);}
+.stop-row.pinned .stop-badge{border-color:var(--waypoint);color:var(--waypoint);}
+
+.suggestions{
+  position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;
+  background:var(--panel-2);border:1px solid var(--grid);border-radius:8px;
+  max-height:220px;overflow-y:auto;display:none;
+  box-shadow:0 10px 24px rgba(0,0,0,0.45);
+}
+.suggestions.open{display:block;}
+.suggestion-item{
+  padding:10px 12px;font-size:13.5px;color:var(--text);cursor:pointer;
+  border-bottom:1px solid var(--grid);line-height:1.35;
+}
+.suggestion-item:last-child{border-bottom:none;}
+.suggestion-item:hover,.suggestion-item.highlighted{background:var(--panel);color:var(--waypoint);}
+.suggestion-empty{padding:10px 12px;font-size:13px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;}
+
+.stop-remove{
+  background:none;border:none;color:var(--text-dim);font-size:18px;
+  width:28px;height:28px;flex-shrink:0;cursor:pointer;border-radius:6px;
+}
+.stop-remove:hover{color:var(--danger);background:var(--panel-2);}
+
+.add-row{
+  display:flex;align-items:center;gap:10px;margin-top:4px;
+}
+.btn-ghost{
+  background:none;border:1px dashed var(--grid);color:var(--text-dim);
+  border-radius:8px;padding:10px 14px;font-size:14px;cursor:pointer;
+  font-family:'Inter',sans-serif;width:100%;text-align:left;
+}
+.btn-ghost:hover{border-color:var(--route);color:var(--text);}
+
+.opts{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:14px;color:var(--text-dim);}
+.opts input{accent-color:var(--route);width:16px;height:16px;}
+
+.btn-primary{
+  width:100%;background:var(--route);border:none;color:#1a1008;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;
+  letter-spacing:.02em;padding:14px;border-radius:9px;cursor:pointer;
+  margin-top:18px;transition:transform .08s ease;
+}
+.btn-primary:active{transform:scale(0.98);}
+.btn-primary:disabled{background:var(--grid);color:var(--text-dim);cursor:not-allowed;}
+
+.status{
+  font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--text-dim);
+  margin-top:10px;min-height:16px;
+}
+.status.err{color:var(--danger);}
+
+#map{
+  width:100%;height:280px;border-radius:var(--radius);border:1px solid var(--grid);
+  margin-top:4px;filter:saturate(0.85);
+}
+
+/* Result manifest */
+.manifest{position:relative;margin-top:16px;}
+.manifest::before{
+  content:"";position:absolute;left:35px;top:6px;bottom:6px;width:2px;
+  background:repeating-linear-gradient(180deg,var(--route-dim) 0 6px, transparent 6px 12px);
+}
+.leg{display:flex;align-items:flex-start;gap:10px;padding:10px 0;position:relative;touch-action:pan-y;}
+.leg.dragging{
+  opacity:0.92;background:var(--panel-2);border-radius:8px;z-index:10;
+  box-shadow:0 8px 20px rgba(0,0,0,0.4);
+}
+.leg .drag-handle{margin-top:2px;}
+.leg-badge{
+  width:28px;height:28px;border-radius:50%;background:var(--ink);
+  border:2px solid var(--route);color:var(--route);
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:1;
+}
+.leg-body{flex:1;padding-top:2px;}
+.leg-addr{font-size:14.5px;color:var(--text);line-height:1.35;}
+.leg-meta{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text-dim);margin-top:3px;}
+
+.totals{
+  display:flex;justify-content:space-between;margin-top:18px;padding:14px;
+  background:var(--panel-2);border-radius:8px;border:1px solid var(--grid);
+}
+.totals .stat-label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;font-family:'JetBrains Mono',monospace;}
+.totals .stat-val{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:600;color:var(--waypoint);margin-top:2px;}
+
+.export-grid{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+.export-btn{
+  flex:1;min-width:140px;text-align:center;text-decoration:none;
+  background:var(--panel);border:1px solid var(--grid);color:var(--text);
+  padding:12px;border-radius:8px;font-size:14px;font-weight:600;
+}
+.export-btn:hover{border-color:var(--waypoint);}
+.export-btn small{display:block;font-weight:400;color:var(--text-dim);font-size:11px;margin-top:2px;font-family:'JetBrains Mono',monospace;}
+
+.leg-links{margin-top:10px;}
+.leg-links a{
+  display:block;font-size:12.5px;color:var(--text-dim);
+  font-family:'JetBrains Mono',monospace;padding:6px 0;text-decoration:none;
+  border-bottom:1px dashed var(--grid);
+}
+.leg-links a:hover{color:var(--waypoint);}
+
+.hint{font-size:12px;color:var(--text-dim);margin-top:8px;line-height:1.5;}
+footer{padding:20px 16px;text-align:center;color:var(--text-dim);font-size:11.5px;font-family:'JetBrains Mono',monospace;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="hero">
+    <p class="eyebrow">Route Optimizer · TSP</p>
+    <h1>Waypoint</h1>
+    <p class="sub">Drop in your stops. It works out the shortest loop and hands the route straight to Maps.</p>
+  </header>
+
+  <section>
+    <p class="section-label">Stops</p>
+    <div id="stopList"></div>
+    <div class="add-row">
+      <button class="btn-ghost" id="addStop">+ Add another stop</button>
+    </div>
+    <p class="hint">Type an address to see suggestions. Drag ⋮⋮ to reorder, tap 📌 to lock a stop's position — the solver will route everything else around it.</p>
+    <label class="opts">
+      <input type="checkbox" id="roundTrip" checked>
+      Round trip — return to the first stop
+    </label>
+    <button class="btn-primary" id="solveBtn">Solve Route</button>
+    <p class="status" id="status"></p>
+  </section>
+
+  <section id="resultsSection" style="display:none;">
+    <p class="section-label">Route</p>
+    <div id="map"></div>
+
+    <div class="manifest" id="manifest"></div>
+    <p class="hint" style="margin-top:2px;">Drag ⋮⋮ on any stop to manually reorder the route — distances and the map update as you go.</p>
+
+    <div class="totals">
+      <div>
+        <div class="stat-label">Total distance</div>
+        <div class="stat-val" id="totalDist">—</div>
+      </div>
+      <div>
+        <div class="stat-label">Stops</div>
+        <div class="stat-val" id="totalStops">—</div>
+      </div>
+    </div>
+
+    <p class="section-label" style="margin-top:24px;">Send to Maps</p>
+    <div class="export-grid">
+      <a class="export-btn" id="googleLink" target="_blank" rel="noopener">Open in Google Maps<small>full route, one tap</small></a>
+      <a class="export-btn" id="appleFirstLeg" target="_blank" rel="noopener">Open in Apple Maps<small>first leg — see below for rest</small></a>
+    </div>
+    <p class="hint">Apple Maps' web link format only supports one leg at a time (an Apple limitation, not this app's). Tap through each leg below as you go, or use the Google Maps link for the whole route at once.</p>
+    <div class="leg-links" id="appleLegLinks"></div>
+  </section>
+
+  <footer>Geocoding via OpenStreetMap Nominatim, scoped to Whangarei–Hamilton, NZ · Routing solved locally in your browser</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const stopListEl = document.getElementById('stopList');
+const statusEl = document.getElementById('status');
+const solveBtn = document.getElementById('solveBtn');
+let stopCount = 0;
+let map, routeLine, markersLayer;
+
+function addStopRow(value=''){
+  stopCount++;
+  const row = document.createElement('div');
+  row.className = 'stop-row';
+  row.innerHTML = `
+    <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
+    <div class="stop-badge">${stopListEl.children.length+1}</div>
+    <div class="stop-input-wrap">
+      <input class="stop-input" type="text" placeholder="e.g. 123 Cameron St, Whangarei" value="${value.replace(/"/g,'&quot;')}" autocomplete="off">
+      <div class="suggestions"></div>
+    </div>
+    <button class="pin-toggle" title="Pin this stop's position">📌</button>
+    <button class="stop-remove" title="Remove">×</button>
+  `;
+  row.querySelector('.stop-remove').addEventListener('click', () => {
+    row.remove();
+    renumber();
+  });
+  row.querySelector('.pin-toggle').addEventListener('click', (e) => {
+    row.classList.toggle('pinned');
+    e.currentTarget.classList.toggle('active');
+  });
+  enableDrag(row);
+  enableAutocomplete(row);
+  stopListEl.appendChild(row);
+  renumber();
+}
+
+function enableDrag(row){
+  const handle = row.querySelector('.drag-handle');
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    row.classList.add('dragging');
+    let lastY = e.clientY;
+
+    function onMove(ev){
+      const dy = ev.clientY - lastY;
+      row.style.transform = `translateY(${dy}px)`;
+
+      const siblings = [...stopListEl.children].filter(r => r !== row);
+      const rowRect = row.getBoundingClientRect();
+      const rowMidY = rowRect.top + rowRect.height / 2;
+
+      let target = null;
+      for(const sib of siblings){
+        const rect = sib.getBoundingClientRect();
+        if(rowMidY < rect.top + rect.height / 2){ target = sib; break; }
+      }
+
+      const currentNext = row.nextElementSibling;
+      if(target !== row && target !== currentNext){
+        stopListEl.insertBefore(row, target || null);
+        row.style.transform = 'translateY(0px)';
+        lastY = ev.clientY;
+      }
+    }
+
+    function onUp(ev){
+      handle.releasePointerCapture(e.pointerId);
+      row.classList.remove('dragging');
+      row.style.transform = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      renumber();
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+function renumber(){
+  [...stopListEl.children].forEach((row,i) => {
+    row.querySelector('.stop-badge').textContent = i+1;
+  });
+}
+
+// Bounding box roughly covering Whangarei down to Hamilton (with margin either side)
+const NZ_VIEWBOX = '173.6,-34.9,176.3,-38.3'; // left,top,right,bottom (lon,lat)
+
+function enableAutocomplete(row){
+  const input = row.querySelector('.stop-input');
+  const box = row.querySelector('.suggestions');
+  let debounceTimer = null;
+  let activeController = null;
+  let highlightedIndex = -1;
+
+  function closeBox(){
+    box.classList.remove('open');
+    box.innerHTML = '';
+    highlightedIndex = -1;
+  }
+
+  function selectSuggestion(item){
+    input.value = item.shortLabel;
+    row.dataset.lat = item.lat;
+    row.dataset.lon = item.lon;
+    row.dataset.fullLabel = item.display;
+    closeBox();
+  }
+
+  async function fetchSuggestions(query){
+    if(activeController) activeController.abort();
+    activeController = new AbortController();
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=nz&bounded=1&viewbox=${NZ_VIEWBOX}&q=${encodeURIComponent(query)}`;
+    try{
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: activeController.signal });
+      if(!res.ok) return;
+      const data = await res.json();
+      renderSuggestions(data);
+    } catch(err){
+      if(err.name !== 'AbortError') console.error(err);
+    }
+  }
+
+  function renderSuggestions(results){
+    box.innerHTML = '';
+    highlightedIndex = -1;
+    if(!results.length){
+      box.innerHTML = `<div class="suggestion-empty">No matches in the Whangarei–Hamilton area</div>`;
+      box.classList.add('open');
+      return;
+    }
+    results.forEach(r => {
+      const shortLabel = r.display_name.split(',').slice(0,3).join(',').trim();
+      const item = document.createElement('div');
+      item.className = 'suggestion-item';
+      item.textContent = r.display_name;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // fire before input blur
+        selectSuggestion({ lat: r.lat, lon: r.lon, display: r.display_name, shortLabel });
+      });
+      box.appendChild(item);
+    });
+    box.classList.add('open');
+  }
+
+  input.addEventListener('input', () => {
+    delete row.dataset.lat;
+    delete row.dataset.lon;
+    delete row.dataset.fullLabel;
+    const q = input.value.trim();
+    clearTimeout(debounceTimer);
+    if(q.length < 3){ closeBox(); return; }
+    debounceTimer = setTimeout(() => fetchSuggestions(q), 350);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    const items = [...box.querySelectorAll('.suggestion-item')];
+    if(!items.length) return;
+    if(e.key === 'ArrowDown'){
+      e.preventDefault();
+      highlightedIndex = Math.min(highlightedIndex+1, items.length-1);
+      items.forEach((it,i) => it.classList.toggle('highlighted', i===highlightedIndex));
+    } else if(e.key === 'ArrowUp'){
+      e.preventDefault();
+      highlightedIndex = Math.max(highlightedIndex-1, 0);
+      items.forEach((it,i) => it.classList.toggle('highlighted', i===highlightedIndex));
+    } else if(e.key === 'Enter' && highlightedIndex >= 0){
+      e.preventDefault();
+      items[highlightedIndex].dispatchEvent(new Event('mousedown'));
+    } else if(e.key === 'Escape'){
+      closeBox();
+    }
+  });
+
+  input.addEventListener('blur', () => setTimeout(closeBox, 120));
+}
+
+document.getElementById('addStop').addEventListener('click', () => addStopRow());
+
+// seed with 3 empty rows
+addStopRow(); addStopRow(); addStopRow();
+
+function haversine(a, b){
+  const R = 6371; // km
+  const dLat = (b.lat-a.lat) * Math.PI/180;
+  const dLon = (b.lon-a.lon) * Math.PI/180;
+  const lat1 = a.lat * Math.PI/180, lat2 = b.lat * Math.PI/180;
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+async function geocode(address){
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=nz&bounded=1&viewbox=${NZ_VIEWBOX}&q=${encodeURIComponent(address)}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if(!res.ok) throw new Error('geocode failed');
+  const data = await res.json();
+  if(!data.length) return null;
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name };
+}
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+function tourLength(order, dist){
+  let total = 0;
+  for(let i=0;i<order.length-1;i++) total += dist[order[i]][order[i+1]];
+  return total;
+}
+
+function nearestNeighbor(n, dist, start=0){
+  const visited = new Set([start]);
+  const order = [start];
+  let current = start;
+  while(visited.size < n){
+    let best = -1, bestD = Infinity;
+    for(let j=0;j<n;j++){
+      if(!visited.has(j) && dist[current][j] < bestD){ bestD = dist[current][j]; best = j; }
+    }
+    visited.add(best); order.push(best); current = best;
+  }
+  return order;
+}
+
+function twoOpt(order, dist, roundTrip){
+  const closedOrder = roundTrip ? [...order, order[0]] : order;
+  let improved = true;
+  let best = closedOrder;
+  while(improved){
+    improved = false;
+    for(let i=1;i<best.length-2;i++){
+      for(let k=i+1;k<best.length-1;k++){
+        const a=best[i-1], b=best[i], c=best[k], d=best[k+1];
+        const delta = (dist[a][c]+dist[b][d]) - (dist[a][b]+dist[c][d]);
+        if(delta < -1e-9){
+          const newOrder = best.slice(0,i).concat(best.slice(i,k+1).reverse()).concat(best.slice(k+1));
+          best = newOrder;
+          improved = true;
+        }
+      }
+    }
+  }
+  return roundTrip ? best.slice(0,-1) : best;
+}
+
+function solveTSP(points, roundTrip){
+  const n = points.length;
+  const dist = Array.from({length:n}, () => new Array(n).fill(0));
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++) dist[i][j] = haversine(points[i], points[j]);
+
+  let bestOrder = null, bestLen = Infinity;
+  const tries = Math.min(n, 6); // try a few starting points for a better local optimum
+  for(let s=0;s<tries;s++){
+    let order = nearestNeighbor(n, dist, s);
+    order = twoOpt(order, dist, roundTrip);
+    const closed = roundTrip ? [...order, order[0]] : order;
+    const len = tourLength(closed, dist);
+    if(len < bestLen){ bestLen = len; bestOrder = order; }
+  }
+  return { order: bestOrder, dist };
+}
+
+// Fixes certain points at certain positions in the tour (pinnedIdxSet holds point
+// indices whose desired final position equals their own index — i.e. wherever the
+// stop currently sits in the input list is where it will land in the solved route)
+// and optimizes the placement/order of everything else around those anchors.
+function solveTSPWithPins(points, roundTrip, pinnedIdxSet){
+  const n = points.length;
+  const dist = Array.from({length:n}, () => new Array(n).fill(0));
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++) dist[i][j] = haversine(points[i], points[j]);
+
+  const pinned = [...pinnedIdxSet].sort((a,b)=>a-b);
+  if(pinned.length === 0) return solveTSP(points, roundTrip);
+  if(pinned.length === n) return { order: points.map((_,i)=>i), dist };
+
+  const pinnedSet = new Set(pinned);
+  const unpinned = [];
+  for(let i=0;i<n;i++) if(!pinnedSet.has(i)) unpinned.push(i);
+
+  // Partition the remaining slots into segments bounded by pinned anchors
+  const segments = [];
+  if(roundTrip){
+    for(let i=0;i<pinned.length;i++){
+      const startPos = pinned[i], endPos = pinned[(i+1)%pinned.length];
+      let capacity = 0, p = (startPos+1)%n;
+      while(p !== endPos){ capacity++; p = (p+1)%n; }
+      segments.push({ start: startPos, end: endPos, capacity, kind: 'closed' });
+    }
+  } else {
+    if(pinned[0] > 0) segments.push({ start: null, end: pinned[0], capacity: pinned[0], kind: 'head' });
+    for(let i=0;i<pinned.length-1;i++){
+      segments.push({ start: pinned[i], end: pinned[i+1], capacity: pinned[i+1]-pinned[i]-1, kind: 'closed' });
+    }
+    const lastPin = pinned[pinned.length-1];
+    if(lastPin < n-1) segments.push({ start: lastPin, end: null, capacity: n-1-lastPin, kind: 'tail' });
+  }
+
+  // Greedily assign each unpinned point to whichever segment it's cheapest to slot into,
+  // respecting each segment's fixed capacity
+  const segCost = (pt, seg) => {
+    if(seg.start != null && seg.end != null) return (dist[seg.start][pt] + dist[pt][seg.end]) / 2;
+    if(seg.start != null) return dist[seg.start][pt];
+    if(seg.end != null) return dist[pt][seg.end];
+    return 0;
+  };
+  const remainingCap = segments.map(s => s.capacity);
+  const segAssigned = segments.map(() => []);
+  const candidates = [];
+  unpinned.forEach(pt => segments.forEach((seg,si) => candidates.push({ pt, si, cost: segCost(pt, seg) })));
+  candidates.sort((a,b) => a.cost - b.cost);
+  const placed = new Set();
+  for(const c of candidates){
+    if(placed.has(c.pt) || remainingCap[c.si] <= 0) continue;
+    segAssigned[c.si].push(c.pt);
+    remainingCap[c.si]--;
+    placed.add(c.pt);
+  }
+
+  function twoOptFixedEnds(full){
+    let best = full.slice();
+    let improved = true;
+    while(improved){
+      improved = false;
+      for(let i=1;i<best.length-2;i++){
+        for(let k=i+1;k<best.length-1;k++){
+          const a=best[i-1], b=best[i], c=best[k], d=best[k+1];
+          const delta = (dist[a][c]+dist[b][d]) - (dist[a][b]+dist[c][d]);
+          if(delta < -1e-9){
+            best = best.slice(0,i).concat(best.slice(i,k+1).reverse()).concat(best.slice(k+1));
+            improved = true;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function orderClosedSegment(startPt, endPt, pts){
+    if(pts.length === 0) return [];
+    if(pts.length === 1) return pts;
+    let remaining = new Set(pts), path = [], current = startPt;
+    while(remaining.size){
+      let best=-1, bestD=Infinity;
+      for(const p of remaining){ const d=dist[current][p]; if(d<bestD){bestD=d;best=p;} }
+      path.push(best); remaining.delete(best); current = best;
+    }
+    const improved = twoOptFixedEnds([startPt, ...path, endPt]);
+    return improved.slice(1,-1);
+  }
+
+  function orderOpenSegment(anchor, pts, anchorIsStart){
+    if(pts.length === 0) return [];
+    if(pts.length === 1) return pts;
+    let remaining = new Set(pts), path = [], current = anchor;
+    while(remaining.size){
+      let best=-1, bestD=Infinity;
+      for(const p of remaining){ const d=dist[current][p]; if(d<bestD){bestD=d;best=p;} }
+      path.push(best); remaining.delete(best); current = best;
+    }
+    return anchorIsStart ? path : path.reverse();
+  }
+
+  let finalOrder = [];
+  if(roundTrip){
+    for(let i=0;i<segments.length;i++){
+      finalOrder.push(pinned[i]);
+      finalOrder.push(...orderClosedSegment(segments[i].start, segments[i].end, segAssigned[i]));
+    }
+  } else {
+    let si = 0;
+    if(segments[0] && segments[0].kind === 'head'){
+      finalOrder.push(...orderOpenSegment(segments[0].end, segAssigned[0], false));
+      si = 1;
+    }
+    for(; si<segments.length; si++){
+      const seg = segments[si];
+      if(seg.kind === 'tail'){
+        finalOrder.push(seg.start);
+        finalOrder.push(...orderOpenSegment(seg.start, segAssigned[si], true));
+      } else {
+        finalOrder.push(seg.start);
+        finalOrder.push(...orderClosedSegment(seg.start, seg.end, segAssigned[si]));
+      }
+    }
+    if(segments.length === 0 || segments[segments.length-1].kind !== 'tail'){
+      finalOrder.push(pinned[pinned.length-1]);
+    }
+  }
+
+  return { order: finalOrder, dist };
+}
+
+function setStatus(msg, isErr=false){
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (isErr ? ' err' : '');
+}
+
+function gmapsLink(points, order, roundTrip){
+  const seq = roundTrip ? [...order, order[0]] : order;
+  const coords = seq.map(i => `${points[i].lat},${points[i].lon}`);
+  const origin = coords[0];
+  const destination = coords[coords.length-1];
+  const waypoints = coords.slice(1,-1).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if(waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
+  return url;
+}
+
+function appleLegLink(a, b){
+  return `https://maps.apple.com/?saddr=${a.lat},${a.lon}&daddr=${b.lat},${b.lon}&dirflg=d`;
+}
+
+solveBtn.addEventListener('click', async () => {
+  const rows = [...stopListEl.querySelectorAll('.stop-row')].filter(row => row.querySelector('.stop-input').value.trim());
+  if(rows.length < 3){
+    setStatus('Add at least 3 stops to build a route.', true);
+    return;
+  }
+  solveBtn.disabled = true;
+  const points = [];
+  const pinnedIdxSet = new Set();
+  try{
+    for(let i=0;i<rows.length;i++){
+      const row = rows[i];
+      const text = row.querySelector('.stop-input').value.trim();
+      if(row.classList.contains('pinned')) pinnedIdxSet.add(i);
+
+      if(row.dataset.lat && row.dataset.lon){
+        // Already resolved via the autocomplete suggestion — no need to hit the geocoder again
+        points.push({ lat: parseFloat(row.dataset.lat), lon: parseFloat(row.dataset.lon), label: text });
+        continue;
+      }
+
+      setStatus(`Locating stop ${i+1} of ${rows.length}: ${text}`);
+      const g = await geocode(text);
+      if(!g){
+        setStatus(`Couldn't find "${text}" in the Whangarei–Hamilton area — try picking a suggestion or adding more detail.`, true);
+        solveBtn.disabled = false;
+        return;
+      }
+      points.push({ ...g, label: text });
+      await sleep(1100); // respect Nominatim's 1 req/sec usage policy
+    }
+
+    setStatus('Solving the route…');
+    const roundTrip = document.getElementById('roundTrip').checked;
+    const { order, dist } = solveTSPWithPins(points, roundTrip, pinnedIdxSet);
+
+    renderResults(points, order, dist, roundTrip);
+    const pinNote = pinnedIdxSet.size ? ` (${pinnedIdxSet.size} pinned)` : '';
+    setStatus(`Done — ${rows.length} stops located and routed${pinNote}.`);
+  } catch(err){
+    console.error(err);
+    setStatus('Something went wrong reaching the geocoding service. Try again in a moment.', true);
+  } finally {
+    solveBtn.disabled = false;
+  }
+});
+
+let currentPoints = null, currentDist = null, currentOrder = null, currentRoundTrip = false;
+
+function renderResults(points, order, dist, roundTrip){
+  currentPoints = points; currentDist = dist; currentOrder = order; currentRoundTrip = roundTrip;
+  document.getElementById('resultsSection').style.display = 'block';
+  renderMap();
+  renderManifest();
+  renderExports();
+}
+
+function renderMap(){
+  const points = currentPoints, order = currentOrder, roundTrip = currentRoundTrip;
+
+  if(!map){
+    map = L.map('map', { zoomControl: true, attributionControl: false });
+  }
+  if(markersLayer) markersLayer.remove();
+  if(routeLine) routeLine.remove();
+  markersLayer = L.layerGroup().addTo(map);
+
+  const seq = roundTrip ? [...order, order[0]] : order;
+  const latlngs = seq.map(i => [points[i].lat, points[i].lon]);
+
+  order.forEach((idx, seqPos) => {
+    const p = points[idx];
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="background:#f2622e;color:#1a1008;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;border:2px solid #121821;">${seqPos+1}</div>`,
+      iconSize:[24,24], iconAnchor:[12,12]
+    });
+    L.marker([p.lat, p.lon], { icon }).addTo(markersLayer);
+  });
+
+  routeLine = L.polyline(latlngs, { color: '#f2622e', weight: 3, opacity: 0.85 }).addTo(map);
+  map.fitBounds(routeLine.getBounds(), { padding: [24,24] });
+  setTimeout(() => map.invalidateSize(), 50);
+}
+
+function renderManifest(){
+  const points = currentPoints, order = currentOrder, dist = currentDist, roundTrip = currentRoundTrip;
+
+  const manifestEl = document.getElementById('manifest');
+  manifestEl.innerHTML = '';
+  let cumulative = 0;
+  order.forEach((idx, i) => {
+    const p = points[idx];
+    let legDist = '';
+    if(i < order.length-1){
+      const d = dist[idx][order[i+1]];
+      cumulative += d;
+      legDist = `${d.toFixed(1)} km to next stop`;
+    } else if(roundTrip){
+      const d = dist[idx][order[0]];
+      cumulative += d;
+      legDist = `${d.toFixed(1)} km back to start`;
+    } else {
+      legDist = 'final stop';
+    }
+    const leg = document.createElement('div');
+    leg.className = 'leg';
+    leg.dataset.pointIdx = idx;
+    leg.innerHTML = `
+      <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
+      <div class="leg-badge">${i+1}</div>
+      <div class="leg-body">
+        <div class="leg-addr">${p.label}</div>
+        <div class="leg-meta">${legDist}</div>
+      </div>
+    `;
+    enableLegDrag(leg);
+    manifestEl.appendChild(leg);
+  });
+
+  document.getElementById('totalDist').textContent = `${cumulative.toFixed(1)} km`;
+  document.getElementById('totalStops').textContent = order.length;
+}
+
+function enableLegDrag(leg){
+  const handle = leg.querySelector('.drag-handle');
+  const manifestEl = document.getElementById('manifest');
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    leg.classList.add('dragging');
+    let lastY = e.clientY;
+
+    function onMove(ev){
+      const dy = ev.clientY - lastY;
+      leg.style.transform = `translateY(${dy}px)`;
+
+      const siblings = [...manifestEl.children].filter(r => r !== leg);
+      const legRect = leg.getBoundingClientRect();
+      const legMidY = legRect.top + legRect.height / 2;
+
+      let target = null;
+      for(const sib of siblings){
+        const rect = sib.getBoundingClientRect();
+        if(legMidY < rect.top + rect.height / 2){ target = sib; break; }
+      }
+
+      const currentNext = leg.nextElementSibling;
+      if(target !== leg && target !== currentNext){
+        manifestEl.insertBefore(leg, target || null);
+        leg.style.transform = 'translateY(0px)';
+        lastY = ev.clientY;
+      }
+    }
+
+    function onUp(ev){
+      handle.releasePointerCapture(e.pointerId);
+      leg.classList.remove('dragging');
+      leg.style.transform = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+
+      // Read the new order straight off the DOM and recompute everything
+      currentOrder = [...manifestEl.children].map(el => parseInt(el.dataset.pointIdx, 10));
+      renderManifest();
+      renderMap();
+      renderExports();
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+function renderExports(){
+  const points = currentPoints, order = currentOrder, roundTrip = currentRoundTrip;
+
+  document.getElementById('googleLink').href = gmapsLink(points, order, roundTrip);
+  const seqForApple = roundTrip ? [...order, order[0]] : order;
+  document.getElementById('appleFirstLeg').href = appleLegLink(points[seqForApple[0]], points[seqForApple[1]]);
+
+  const legLinksEl = document.getElementById('appleLegLinks');
+  legLinksEl.innerHTML = '';
+  for(let i=0;i<seqForApple.length-1;i++){
+    const a = points[seqForApple[i]], b = points[seqForApple[i+1]];
+    const link = document.createElement('a');
+    link.href = appleLegLink(a,b);
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = `Leg ${i+1}: ${a.label}  →  ${b.label}`;
+    legLinksEl.appendChild(link);
+  }
+}
+
+</script>
+</body>
+</html>
